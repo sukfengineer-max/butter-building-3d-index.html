@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ตึกบัตเตอร์ 3 ชั้น – 3D Isometric</title>
+<style>
+:root{--bg:#eef1f4;--fg:#1d2733;--card:#fff;--bd:#c9d1da;--ac:#2e7d4f;--acfg:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161b22;--fg:#e6edf3;--card:#222a33;--bd:#3a4552;--ac:#4caf78;--acfg:#08150d}}
+:root[data-theme="dark"]{--bg:#161b22;--fg:#e6edf3;--card:#222a33;--bd:#3a4552;--ac:#4caf78;--acfg:#08150d}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:"Sarabun","Noto Sans Thai",system-ui,sans-serif;display:flex;flex-direction:column}
+header{padding:8px 10px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--card);border-bottom:1px solid var(--bd)}
+h1{font-size:15px;margin:0 8px 0 0}
+button{font:inherit;font-size:14px;padding:6px 12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:8px;cursor:pointer}
+button.on{background:var(--ac);color:var(--acfg);border-color:var(--ac)}
+label{font-size:14px;display:flex;align-items:center;gap:5px;cursor:pointer}
+.sp{flex:1}
+#stage{flex:1;position:relative;min-height:0;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.dl{position:absolute;transform:translate(-50%,-50%);font-size:11px;font-weight:600;color:#c62222;background:rgba(255,255,255,.78);padding:0 3px;border-radius:3px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dl{color:#ff8a80;background:rgba(0,0,0,.6)}}
+#info{position:absolute;left:10px;bottom:8px;font-size:12px;opacity:.75;pointer-events:none}
+.lg{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 3px 0 8px;vertical-align:middle}
+</style></head><body>
+<header>
+<h1>ตึกบัตเตอร์ 3 ชั้น</h1>
+<button data-f="1">ชั้น 1</button><button data-f="2">ชั้น 2</button><button data-f="3">ชั้น 3</button><button data-f="0" class="on">ดูทั้งหมด</button>
+<label><input type="checkbox" id="tr"> ผนังโปร่งแสง</label><label><input type="checkbox" id="dm" checked> แสดงขนาด (ม.)</label><label><input type="checkbox" id="sw" checked> เปิดบานสวิง</label>
+<span class="sp"></span>
+<button id="rl" title="หมุนซ้าย">⟲</button><button id="rr" title="หมุนขวา">⟳</button><button id="zi">＋</button><button id="zo">－</button><button id="rs">มุม Isometric</button>
+</header>
+<div id="stage"><canvas id="c"></canvas><div id="labs"></div>
+<div id="info">ลากเพื่อหมุน • ล้อเมาส์ซูม • ผนังสูง ชั้น1 2.6 ม. / ชั้น2 3.3 ม. / ชั้น3 4.0 ม.
+<br><span class="lg" style="background:#3f9a56"></span>พื้น PU เขียว<span class="lg" style="background:#efe3c2"></span>ผนังปูนครีม<span class="lg" style="background:#2aa6c9"></span>ประตูบานสวิง<span class="lg" style="background:#7fdcf0"></span>ประตูบานเลื่อน</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const T=0.2,L=19.6,D=7.4;
+const canvas=document.getElementById('c'),stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff,0.72));
+const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(-10,25,18);scene.add(dl);
+const cam=new THREE.OrthographicCamera(-1,1,1,-1,-200,300);
+const wallMat=new THREE.MeshLambertMaterial({color:0xefe3c2});
+const floorMat=new THREE.MeshLambertMaterial({color:0x3f9a56});
+const stairMat=new THREE.MeshLambertMaterial({color:0xb9b2a0});
+const glassMat=new THREE.MeshLambertMaterial({color:0x35c6e8,transparent:true,opacity:0.45,depthWrite:false});
+const edgeMat=new THREE.LineBasicMaterial({color:0x8d8266,transparent:true,opacity:0.7});
+const G=[new THREE.Group(),new THREE.Group(),new THREE.Group()];G.forEach(g=>scene.add(g));
+
+function box(g,x0,x1,y0,y1,z0,z1,m,edge){
+  if(x1-x0<1e-3||y1-y0<1e-3||z1-z0<1e-3)return;
+  const geo=new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0);
+  const p=[(x0+x1)/2,(y0+y1)/2,(z0+z1)/2];
+  const me=new THREE.Mesh(geo,m);me.position.set(...p);g.add(me);
+  if(edge){const l=new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat);l.position.set(...p);g.add(l);}
+}
+function wall(g,x1,z1,x2,z2,y0,h,ops=[]){
+  const hz=z1===z2,len=hz?x2-x1:z2-z1;
+  const pc=(s,e,a,b)=>hz?box(g,x1+s,x1+e,y0+a,y0+b,z1-T/2,z1+T/2,wallMat,1):box(g,x1-T/2,x1+T/2,y0+a,y0+b,z1+s,z1+e,wallMat,1);
+  let c=0;
+  ops.sort((a,b)=>a.a-b.a).forEach(o=>{
+    if(o.a>c)pc(c,o.a,0,h);
+    if(o.sill>0)pc(o.a,o.b,0,o.sill);
+    if(o.top<h)pc(o.a,o.b,o.top,h);
+    if(o.g){const q=0.05;hz?box(g,x1+o.a,x1+o.b,y0+o.sill,y0+o.top,z1-q,z1+q,glassMat):box(g,x1-q,x1+q,y0+o.sill,y0+o.top,z1+o.a,z1+o.b,glassMat);}
+    if(o.s)slide(g,y0,x1,z1,hz,o.a,o.b);
+    c=o.b;
+  });
+  if(c<len)pc(c,len,0,h);
+}
+const win=(a,b)=>({a,b,sill:0.9,top:2.2,g:1}), door=(a,b)=>({a,b,sill:0,top:2.1});
+function plate(g,y,hole){
+  const t=0.2,y0=y-t;
+  if(!hole){box(g,0,L,y0,y,0,D,floorMat,1);return;}
+  const [a,b,c,d]=hole;
+  box(g,0,a,y0,y,0,D,floorMat,1);box(g,b,L,y0,y,0,D,floorMat,1);
+  box(g,a,b,y0,y,0,c,floorMat,1);box(g,a,b,y0,y,d,D,floorMat,1);
+}
+function flight(g,xs,xe,z0,z1,yb,rise,n,solid){
+  const dx=(xe-xs)/n;
+  for(let i=0;i<n;i++){const xa=xs+i*dx,xb=xa+dx,top=yb+(i+1)*rise/n;box(g,Math.min(xa,xb),Math.max(xa,xb),solid?yb:top-0.18,top,z0,z1,stairMat,1);}
+}
+
+
+const doorMat=new THREE.MeshLambertMaterial({color:0x2aa6c9});
+const slideMat=new THREE.MeshLambertMaterial({color:0x35c6e8,transparent:true,opacity:0.55,depthWrite:false});
+const swings=[];
+const sl=(a,b)=>({a,b,sill:0,top:2.1,s:1});
+function swing(g,y0,hx,hz,cx,cz,ox,oz,len){
+  const p=new THREE.Group();p.position.set(hx,y0,hz);
+  const geo=new THREE.BoxGeometry(len,2.1,0.05);
+  const m=new THREE.Mesh(geo,doorMat);m.position.set(len/2,1.05,0);
+  const e=new THREE.LineSegments(new THREE.EdgesGeometry(geo),edgeMat);e.position.copy(m.position);
+  p.add(m,e);p.userData={c:Math.atan2(-cz,cx),o:Math.atan2(-oz,ox)};p.rotation.y=p.userData.o;g.add(p);swings.push(p);
+}
+function slide(g,y0,x1,z1,hz,a,b){
+  const pl=(b-a)*0.55,q=0.07,t=0.02;
+  if(hz){box(g,x1+a,x1+a+pl,y0+0.05,y0+2.1,z1-q-t,z1-q+t,slideMat,1);box(g,x1+b-pl,x1+b,y0+0.05,y0+2.1,z1+q-t,z1+q+t,slideMat,1);}
+  else{box(g,x1-q-t,x1-q+t,y0+0.05,y0+2.1,z1+a,z1+a+pl,slideMat,1);box(g,x1+q-t,x1+q+t,y0+0.05,y0+2.1,z1+b-pl,z1+b,slideMat,1);}
+}
+// ชั้น 1
+(function(){const g=G[0],y=0,h=2.6;plate(g,0,null);
+ wall(g,0,0,L,0,y,h);wall(g,0,0,0,D,y,h);wall(g,L,0,L,D,y,h);
+ wall(g,3.7,0,3.7,D,y,h);wall(g,7,0,7,D,y,h);wall(g,3.7,2.45,7,2.45,y,h,[sl(0.4,2.9)]);
+ wall(g,1.3,0,1.3,1.3,y,h);wall(g,0,1.3,1.3,1.3,y,h,[door(0.5,1.3)]);swing(g,y,1.3,1.3,-1,0,0,1,0.8);
+ wall(g,16.3,0,16.3,4.6,y,h,[sl(2.5,4.5)]);wall(g,16.3,4.6,L,4.6,y,h);
+ wall(g,13.6,5.5,13.6,D,y,h);wall(g,13.6,D,L,D,y,h);wall(g,13.6,5.5,L,5.5,y,h,[door(5.2,6.0)]);swing(g,y,19.6,5.5,-1,0,0,1,0.8);
+ flight(g,18.4,14.0,5.6,7.3,0,2.6,15,1);
+})();
+// ชั้น 2
+(function(){const g=G[1],y=2.6,h=3.3;plate(g,y,[14.0,18.4,5.6,7.3]);
+ wall(g,0,0,L,0,y,h);wall(g,0,0,0,D,y,h);wall(g,L,0,L,D,y,h);wall(g,0,D,L,D,y,h);
+ wall(g,3.7,0,3.7,2.5,y,h);wall(g,3.7,2.5,7,2.5,y,h,[sl(0.4,2.9)]);wall(g,7,0,7,D,y,h,[sl(5.35,7.3)]);
+ wall(g,13.6,0,13.6,4.6,y,h,[sl(2.5,4.5)]);wall(g,13.6,4.6,L,4.6,y,h);
+ wall(g,11.6,5.5,11.6,D,y,h);wall(g,11.6,5.5,L,5.5,y,h,[door(0.05,0.9),door(7.2,8.0)]);
+ swing(g,y,11.6,5.5,1,0,0,-1,0.85);swing(g,y,19.6,5.5,-1,0,0,1,0.8);
+ flight(g,18.6,13.0,5.6,7.3,y,3.3,19);
+})();
+// ชั้น 3 (แก้ไข: เพิ่มประตูบานเลื่อนที่ผนัง x=7.0 เหมือนชั้น 2)
+(function(){const g=G[2],y=5.9,h=4;plate(g,y,[13.0,18.7,5.6,7.3]);
+ wall(g,0,0,L,0,y,h);wall(g,0,0,0,D,y,h);wall(g,L,0,L,D,y,h);
+ wall(g,0,D,7,D,y,h);wall(g,10,D,L,D,y,h);wall(g,7,0,7,D,y,h,[sl(5.35,7.3)]);
+ wall(g,1.85,0,1.85,2.5,y,h);wall(g,3.7,0,3.7,2.5,y,h);
+ wall(g,0,2.5,7,2.5,y,h,[door(1.0,1.85),door(2.85,3.7),sl(4.1,6.6)]);
+ swing(g,y,1.85,2.5,-1,0,0,1,0.85);swing(g,y,3.7,2.5,-1,0,0,1,0.85);
+ wall(g,14.6,0,14.6,5.5,y,h,[sl(3.4,5.4)]);
+ wall(g,10,5.5,L,5.5,y,h,[door(0.05,0.9),door(8.8,9.6)]);wall(g,10,5.5,10,D,y,h);
+ swing(g,y,10,5.5,1,0,0,-1,0.85);swing(g,y,19.6,5.5,-1,0,0,1,0.8);
+})();
+
+// ขนาด (dimension)
+const dimMat=new THREE.LineBasicMaterial({color:0xd62a2a,depthTest:false,transparent:true});
+const dimG=[0,1,2,3].map((_,i)=>{const g=new THREE.Group();(i<3?G[i]:scene).add(g);return g});
+const labs=[],labBox=document.getElementById('labs'),V=(x,y,z)=>new THREE.Vector3(x,y,z);
+let dimsOn=true;
+function dim(fl,p,q,txt){
+  const d=q.clone().sub(p),pr=Math.abs(d.x)>Math.abs(d.z)&&Math.abs(d.x)>Math.abs(d.y)?V(0,0,0.25):V(0.25,0,0);
+  const pts=[p,q,p.clone().add(pr),p.clone().sub(pr),q.clone().add(pr),q.clone().sub(pr)];
+  const l=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),dimMat);l.renderOrder=999;dimG[fl].add(l);
+  const el=document.createElement('div');el.className='dl';el.textContent=txt;labBox.appendChild(el);
+  labs.push({el,pos:p.clone().add(q).multiplyScalar(0.5),fl});
+}
+const f2=v=>v.toFixed(2);
+function cx(fl,y,P,z){for(let i=0;i<P.length-1;i++)dim(fl,V(P[i],y,z),V(P[i+1],y,z),f2(P[i+1]-P[i]));}
+function cz(fl,y,P,x){for(let i=0;i<P.length-1;i++)dim(fl,V(x,y,P[i]),V(x,y,P[i+1]),f2(P[i+1]-P[i]));}
+[[0,0.03,[0,3.7,7,16.3,19.6],[7,13.6,19.6],[0,4.6,5.5,7.4]],
+ [1,2.63,[0,3.7,7,13.6,19.6],[7,11.6,19.6],[0,4.6,5.5,7.4]],
+ [2,5.93,[0,1.85,3.7,7,14.6,19.6],[7,10,19.6],[0,5.5,7.4]]].forEach(([f,y,t,b,r])=>{
+  cx(f,y,t,-1);cx(f,y,[0,L],-2.3);cx(f,y,b,D+1);cz(f,y,r,L+1);cz(f,y,[0,D],L+2.3);
+});
+cz(0,0.03,[0,1.3],-1);cz(2,5.93,[0,2.5],-1);
+dim(0,V(-1.4,0,D+1.4),V(-1.4,2.6,D+1.4),'2.60');
+dim(1,V(-1.4,2.6,D+1.4),V(-1.4,5.9,D+1.4),'3.30');
+dim(2,V(-1.4,5.9,D+1.4),V(-1.4,9.9,D+1.4),'4.00');
+dim(3,V(-2.8,0,D+1.4),V(-2.8,9.9,D+1.4),'9.90');
+
+// กล้อง
+let az=-Math.PI/4,el=Math.atan(1/Math.SQRT2),zoom=1,sel=0;
+const tx=9.8,tz=3.7;let ty=4.95;
+function resize(){
+  const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+  renderer.setSize(w,h,false);
+  const a=w/h,s=Math.max(13,18/a);
+  cam.left=-s*a;cam.right=s*a;cam.top=s;cam.bottom=-s;cam.zoom=zoom;cam.updateProjectionMatrix();draw();
+}
+function draw(){
+  const d=80;
+  cam.position.set(tx+d*Math.sin(az)*Math.cos(el),ty+d*Math.sin(el),tz+d*Math.cos(az)*Math.cos(el));
+  cam.lookAt(tx,ty,tz);cam.zoom=zoom;cam.updateProjectionMatrix();renderer.render(scene,cam);
+  cam.updateMatrixWorld();const w=stage.clientWidth,h=stage.clientHeight;
+  labs.forEach(l=>{const vis=dimsOn&&(l.fl===3?sel===0:(sel===0||sel===l.fl+1));l.el.style.display=vis?'block':'none';
+    if(!vis)return;const p=l.pos.clone().project(cam);l.el.style.left=((p.x+1)/2*w)+'px';l.el.style.top=((1-p.y)/2*h)+'px';});
+}
+function setFloor(n){
+  sel=n;G.forEach((g,i)=>g.visible=(n===0||n===i+1));
+  ty=[4.95,1.3,4.25,7.9][n];
+  document.querySelectorAll('[data-f]').forEach(b=>b.classList.toggle('on',+b.dataset.f===n));draw();
+}
+document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>setFloor(+b.dataset.f));
+dimG[3].visible=true;
+document.getElementById('dm').onchange=e=>{dimsOn=e.target.checked;dimG.forEach(g=>g.visible=dimsOn);draw()};
+document.getElementById('sw').onchange=e=>{swings.forEach(p=>p.rotation.y=e.target.checked?p.userData.o:p.userData.c);draw()};
+document.getElementById('tr').onchange=e=>{
+  const on=e.target.checked;
+  wallMat.transparent=on;wallMat.opacity=on?0.2:1;wallMat.depthWrite=!on;wallMat.needsUpdate=true;
+  glassMat.opacity=on?0.3:0.45;edgeMat.opacity=on?0.45:0.7;draw();
+};
+const $=id=>document.getElementById(id);
+$('rl').onclick=()=>{az-=Math.PI/2;draw()};$('rr').onclick=()=>{az+=Math.PI/2;draw()};
+$('zi').onclick=()=>{zoom=Math.min(4,zoom*1.2);draw()};$('zo').onclick=()=>{zoom=Math.max(0.5,zoom/1.2);draw()};
+$('rs').onclick=()=>{az=-Math.PI/4;el=Math.atan(1/Math.SQRT2);zoom=1;draw()};
+let drag=null;
+canvas.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;
+  az-=(e.clientX-drag[0])*0.008;el=Math.max(0.2,Math.min(1.45,el+(e.clientY-drag[1])*0.006));drag=[e.clientX,e.clientY];draw()});
+canvas.addEventListener('pointerup',()=>drag=null);canvas.addEventListener('pointercancel',()=>drag=null);
+canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(0.5,Math.min(4,zoom*(e.deltaY<0?1.1:1/1.1)));draw()},{passive:false});
+addEventListener('resize',resize);resize();setFloor(0);
+</script></body></html>
